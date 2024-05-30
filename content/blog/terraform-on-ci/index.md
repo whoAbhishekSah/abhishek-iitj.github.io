@@ -59,79 +59,64 @@ Terraform will need to talk to our cloud provider via CI. This means the right A
 
 When an Infra admin runs terraform from local machine to make Infra changes, they typically use their personal identity(AWS SSO Profile for example) to authenticate with AWS. AWS Terraform provider can get auth configuration from [several](https://registry.terraform.io/providers/hashicorp/aws/latest/docs#authentication-and-configuration) sources with a pre-defined priority order. We can use any of these listed auth mechanism to authenticate terraform on CI as well.
 
-For AWS, I've found the easiest way is to use SSO with assume role. This is how it went. First setup is creating AWS Dir in CI (`~/.aws`) and an AWS config file that can be used by TF AWS Provider. The role that you want to mention in this config file should ideally should have access to create/destroy/change all kind of infra in your AWS account. We can restrict access by allowing selective actions or selected resources as well for better control on infra and cost. Let's call this IAM role `core-tf-runner-role`.
+**Setup**
+
+First setup is creating AWS Dir in CI (`~/.aws`) and an AWS config file that can be used by [TF AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs). Inside this file, we should mention a role that have access to create/destroy/change all kind of infra in your AWS account.
 
 This is how the role policy should look like:
 
 ```json
 {
-    "Statement": [
-        {
-            "Action": "*",
-            "Effect": "Allow",
-            "Resource": "*",
-            "Sid": ""
-        }
-    ],
-    "Version": "2012-10-17"
+  "Statement": [
+    {
+      "Action": "*",
+      "Effect": "Allow",
+      "Resource": "*",
+      "Sid": ""
+    }
+  ],
+  "Version": "2012-10-17"
 }
 ```
 
-Now we just need to use this role in CI to provision infrastructure in our AWS account. For that we will need to allow the Github Runners to assume this role. We can achieve that via a trust relationship like:
+You can see we have given `*/*` permissions to this role. But we can restrict access by allowing selective actions or selected resources as well for better control on infra and cost.
+Let's call this IAM role `core-tf-runner-role`.
+
+Now we just need to assume this role in CI to provision infrastructure in our AWS account. For that we will need to allow the Github Runners to assume this role. We can achieve that via a trust relationship like:
 
 ```json
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "",
-            "Effect": "Allow",
-            "Principal": {
-                "Federated": "arn:aws:iam::ACCNT_ID:oidc-provider/token.actions.githubusercontent.com"
-            },
-            "Action": "sts:AssumeRoleWithWebIdentity",
-            "Condition": {
-                "StringEquals": {
-                    "token.actions.githubusercontent.com:aud": "https://github.com/orgName/repoName"
-                },
-                "StringLike": {
-                    "token.actions.githubusercontent.com:sub": "repo:orgName/repoName:*"
-                }
-            }
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "https://github.com/orgName/repoName"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:orgName/repoName:*"
         }
-    ]
+      }
+    }
+  ]
 }
 ```
 
 ![Conceptual Flow](./terraform_ci_0.svg)
 
+On CI, we need to create a config file in the below format. THe AWS Profile should assume the role we created above.
 
 Example Config file:
 
 ```sh
 [profile core_aws_account]
 role_arn = arn:aws:iam::dev-acnt-id:role/core-tf-runner-role
-credential_source = Environment
-region = us-west-1
-```
-
-If you have multiple AWS accounts, it's best to create one tf-runner role per AWS account for better namespacing. e.g prod-tf-runner-role, security-tf-runner-role, dev-tf-runner-role. 
-
-Example Config file:
-
-```sh
-[profile dev_aws_account]
-role_arn = arn:aws:iam::dev-acnt-id:role/dev-tf-runner-role
-credential_source = Environment
-region = us-west-1
-
-[profile prod_aws_account]
-role_arn = arn:aws:iam::prod-acnt-id:role/prod-tf-runner-role
-credential_source = Environment
-region = us-west-1
-
-[profile security_aws_account]
-role_arn = arn:aws:iam::prod-acnt-id:role/security-tf-runner-role
 credential_source = Environment
 region = us-west-1
 ```
@@ -170,7 +155,7 @@ terraform {
     bucket              = "<<bucket-name>>"
     key                 = "<<state path>>"
     region              = "us-west-1"
-    profile             = "dev_aws_account"   //access provided via ~/.aws/config file
+    profile             = "core_aws_account"   //access provided via ~/.aws/config file
     use_legacy_workflow = false
   }
 }
@@ -192,6 +177,56 @@ resource "aws_s3_bucket" "example" {
 }
 ```
 
-The above scenario was applicable when the terraform state file is stored in the same module where resources are being provisioned. This can be a suboptimal approach when you are dealing with multiple aws accounts. Instead, the state files can be stored in a bucket in some master/core AWS Account. 
+**Multi AWS Account setup**
 
-So terraform module will first need to access the core AWS account, then it will require access to 
+If you have multiple AWS accounts, it's best to create one tf-runner role per AWS account for better control and management. e.g prod-tf-runner-role, security-tf-runner-role, dev-tf-runner-role.
+
+Example Config file:
+
+```sh
+[profile dev_aws_account]
+role_arn = arn:aws:iam::dev-acnt-id:role/dev-tf-runner-role
+credential_source = Environment
+region = us-west-1
+
+[profile prod_aws_account]
+role_arn = arn:aws:iam::prod-acnt-id:role/prod-tf-runner-role
+credential_source = Environment
+region = us-west-1
+
+[profile security_aws_account]
+role_arn = arn:aws:iam::prod-acnt-id:role/security-tf-runner-role
+credential_source = Environment
+region = us-west-1
+```
+
+We can establish the same trust relationship with Github in each role. But that can be tedious to manage. We can "DRY" it further by creating an intermediate role which can assume all these runner roles and can be assumed by Github. I'll call this role "core-tf-runner-role" here.
+
+Conceptually:
+
+![Conceptual Flow](./terraform_ci_2.svg)
+
+In order to achieve this flow, we will need to add a trust relationship between core-tf-runner-role and other runner roles.
+
+```json
+// create this trust relationship with all other runner roles
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::ACCNT_ID:role/core-tf-runner-role"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Now our setup is capable of handling multi AWS account interaction. There could be many cases where one terraform module needs to authenticate with two or more AWS accounts. Here is an example from workplace:
+
+Provisioning multiple AWS accounts with a collaboartive team requires careful state management of Terraform. One approach can be to keep the state in a S3 bucket in an account separate form all other workload AWS accounts. So, when terraform will init and fetch the state, it will
+
+So terraform module will first need to access the core AWS account, then it will require access to
