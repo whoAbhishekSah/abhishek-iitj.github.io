@@ -128,7 +128,7 @@ docker_container.nginx: Creation complete after 10s [id=cf2b32c1c0c3b3aa53386949
 Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
 ```
 
-Terraform stores the current infrastructure state in a "state file" named `terraform.tfstate` extension. When you run the plan, it will show the diff between the current code and the state file. When you accept and apply the diff, Terraform will make the appropriate changes to update the infra and state file. The code and state remain in sync. Terraform uses the [Providers](https://registry.terraform.io/browse/providers) to make the infra changes.
+Terraform stores the current infrastructure state in a "state file" named "terraform.tfstate" extension. When you run the plan, it will show the diff between the current code and the state file. When you accept and apply the diff, Terraform will make the appropriate changes to update the infra and state file. The code and state remain in sync. Terraform uses the [Providers](https://registry.terraform.io/browse/providers) to make the infra changes.
 
 To run Terraform collaboratively, a team of SRE/DevOps engineers may choose to share the same state file with everyone in the team - by putting it in a shared bucket, e.g., an S3 bucket. This way, multiple people making changes to infra will not accidentally overwrite each other. When someone runs a plan/apply action, Terraform acquires a lock on the state file. When others try to access the state, they will see an error ensuring the serializability of infra changes. We can share the state file by mentioning the `backend` block inside the terraform file.
 
@@ -155,30 +155,32 @@ terraform {
 
 Terraform will try to connect to this bucket and proceed to it using the configured authentication mechanism. In later sections, we will explore authentication in depth.
 
-### Going one step beyond
+## Going one step beyond
 
-Even with a collaborative workflow, the responsibility of making infra changes relies solely on individual DevOps/SRE team members. This can be a good thing or a bad thing, depending on how one views it.
+Even with a collaborative workflow, the responsibility of making infra changes relies solely on individual DevOps/SRE team members. This can be a good or bad thing, depending on how one views it.
 
-It is good in the sense that only a certain set of people have to do infrastructure work, which gives other kinds of developers (such as Backend, ML, and AI engineers) time to focus on their core problems, which are shipping out new features and fixing bugs. It is bad in the sense that only a certain set of people can make infrastructure changes 😄, which creates a blocker for other teams, even for the simplest tasks.
+It is good because only a particular set of people have to do infrastructure work, giving other developers (such as Backend, ML, and AI engineers) time to focus on their core problems, which are shipping out new features and fixing bugs. It is bad because only a particular set of people can make infrastructure changes 😄, which creates a blocker for other teams, even for the simplest tasks.
 
-Most of the time, the infra changes requested by the developer and other teams are [ops/toil](https://sre.google/sre-book/eliminating-toil/) in nature, such as giving or removing access, increasing disk sizes, creating SSH users on servers, or setting up CI/CD for a new service. Infra teams can set up local automation scripts to carry out such ops tasks. They can even share the scripts with other teammates.
+Most of the time, the infra changes requested by the developer and other teams are [ops/toil](https://sre.google/sre-book/eliminating-toil/) in nature, such as giving or removing access, increasing disk sizes, creating SSH users on servers, or setting up CI/CD for a new service. Infra teams can set up local automation scripts for such ops tasks. They can even share the scripts with other teammates.
 
-The issue with local runs is that the environment can break easily. For example, provider version mismatch, unintended package updates, corrupted config files, and cloud authentication issues can break local automation environments due to regressions. These issues can also be a problem for Terraform modules. Such regressions can delay resolving these ops requests and lead to X-Y problem scenarios. The Engineer wanted to complete the ops task but found themselves debugging the correct config file values. Situations like these can cause ops fatigue if not appropriately dealt with. Introducing a new member to the team increases the problem many folds. An experienced teammate will have to personally teach the new member all the "tips" and "tricks" of running Terraform. The complexity of the infrastructure landscape can also add up to more regressions, such as many cloud providers in use and legacy infra code. It just adds up the time to resolve the ops task at hand.
+The issue with local runs is that the environment can break easily. For example, provider version mismatch, unintended package updates, corrupted config files, and cloud authentication issues can break local automation environments due to regressions. These issues can also be a problem for Terraform modules. Such regressions can delay resolving these ops requests and lead to X-Y problem scenarios. The Engineer wanted to complete the ops task but found themselves debugging the correct config file values. Situations like these can cause ops fatigue if not appropriately dealt with. Introducing a new member to the team increases the problem many folds. An experienced teammate must personally teach the new member all the "tips" and "tricks" of running Terraform. The complexity of the infrastructure landscape can also add up to more regressions, such as many cloud providers in use and legacy infra code. It just adds up the time to resolve the ops task at hand.
 
 That's where terraform on CI can help.
 
-We can run the terraform automation scripts on a CI pipeline. In that case, we can drastically reduce the average time to resolve ops tasks. Furthermore, developers can get unblocked by contributing to such automation since the code speaks for itself! It saves much time for everyone. Moreover, running Terraform on a CI is just like any other recurring software engineering task that needs to run in an automated way if appropriately designed. In the upcoming section, we will get into the details explaining how we put Terraform on CI at Pixxel. But let's look at how the terraform workflow stated in the previous section changes. Below are the updated steps:
+We can run the terraform automation scripts on a CI pipeline. In that case, we can drastically reduce the average time to resolve ops tasks. Furthermore, developers can get unblocked by contributing to such automation since the code speaks for itself! It saves much time for everyone. Moreover, running Terraform on a CI is just like any other recurring software engineering task that needs to run in an automated way if appropriately designed. In the upcoming section, I will explain how we put Terraform on CI at Pixxel. But let's look at how the terraform workflow stated in the previous section changes. Below are the updated steps:
 
 1. You make the required code changes to the relevant terraform modules.
 2. You raise a PR with such changes
 3. The CI detects the changed modules against the main branch.
 4. The CI runs the Terraform plan on these modules using the same shared state file.
-5. Other team members can review the plan.
+5. Other team members can review the plan. You can also perform static code checks such as linting and formatting.
+   ![PR Checks example](./ci_0.png)
+
 6. If the plan looks good, the PR can be merged.
 7. Once the changes are in the main branch, the plan can be applied(automatically or with a manual trigger).
 
-This approach has several benefits. Terraform and other installations are set up reliably. The CI can carry out the tasks repeatedly without drifting configs. Engineers can make multiple infra changes can be made in parallel. It is collaborative, as the logs from the Terraform run are visible to people inside your org. The changes can be reviewed, challenged, revised, etc.
+This approach has several benefits. The CI will reliably set up Terraform, its providers, and other supporting packages. It can carry out tasks repeatedly without drifting configurations. Engineers can make multiple infra changes can be made in parallel. It is collaborative, as the logs from the Terraform run are visible to people inside your org. People can review the diff, request changes, and suggest changes quickly.
 
 Moreover, you can roll back reliably. This workflow increases everyone's participation in infrastructure and builds confidence in changes. And let's be honest, solving ops problems all the time is boring and soon becomes frustrating. If you can't avoid it, best automate it. Once you have Terraform running on CI, you can "hopefully" ask dev teams to raise PRs -- for simple ops changes. You can point them to how to do it from similar ops changes done in the past. Of course, this claim that developers will raise Infra PR depends heavily on the engineering culture of the org 😅. But I think it brings hope for collaboration, better than zero visibility into infrastructure by developer teams.
 
-With the intent set, part two of this blog will discuss the technical aspects of setting up Terraform on CI. We will cover aspects such as Authentication and Authorization with cloud providers, Terraform providers, and CI triggers. Stay tuned!
+With the intent set, part two of this blog will discuss the technical aspects of setting up Terraform on CI. We will cover Authentication and Authorization with cloud providers, Terraform providers, and CI triggers. Stay tuned!
