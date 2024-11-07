@@ -10,7 +10,7 @@ We at [Pixxel](https://www.pixxel.space/) heavily use [Terraform](https://www.te
 
 Terraform allows you to dry-run your changes before actually applying them. This is called a "Plan." The result of running a plan is a human-readable diff of the changes.
 
-Here is the most straightforward Terraform file. It uses the `kreuzwerker/docker` provider to pull an image `nginx:latest` and create a container called `nginx`.
+Here is the most straightforward Terraform file. It uses the `kreuzwerker/docker` provider to pull an image `nginx:latest` and create an nginx container named `psyduck`.
 
 ```hcl
 # main.tf
@@ -165,7 +165,7 @@ Most of the time, the infra changes requested by the developer and other teams a
 
 The issue with local runs is that the environment can break easily. For example, provider version mismatch, unintended package updates, corrupted config files, and cloud authentication issues can break local automation environments due to regressions. These issues can also be a problem for Terraform modules. Such regressions can delay resolving these ops requests and lead to X-Y problem scenarios. The Engineer wanted to complete the ops task but found themselves debugging the correct config file values. Situations like these can cause ops fatigue if not appropriately dealt with. Introducing a new member to the team increases the problem many folds. An experienced teammate must personally teach the new member all the "tips" and "tricks" of running Terraform. The complexity of the infrastructure landscape can also add up to more regressions, such as many cloud providers in use and legacy infra code. It just adds up the time to resolve the ops task at hand.
 
-That's where terraform on CI can help.
+**That's where terraform on CI can help.**
 
 We can run the terraform automation scripts on a CI pipeline. In that case, we can drastically reduce the average time to resolve ops tasks. Furthermore, developers can get unblocked by contributing to such automation since the code speaks for itself! It saves much time for everyone. Moreover, running Terraform on a CI is just like any other recurring software engineering task that needs to run in an automated way if appropriately designed. In the upcoming section, I will explain how we put Terraform on CI at Pixxel. But let's look at how the terraform workflow stated in the previous section changes. Below are the updated steps:
 
@@ -179,8 +179,8 @@ We can run the terraform automation scripts on a CI pipeline. In that case, we c
 6. If the plan looks good, the PR can be merged.
 7. Once the changes are in the main branch, the plan can be applied(automatically or with a manual trigger).
 
-This approach has several benefits. The CI will reliably set up Terraform, its providers, and other supporting packages. It can carry out tasks repeatedly without drifting configurations. Engineers can make multiple infra changes can be made in parallel. It is collaborative, as the logs from the Terraform run are visible to people inside your org. People can review the diff, request changes, and suggest changes quickly.
+This approach has several benefits. The CI will reliably set up Terraform, its providers, and other supporting packages. It can carry out tasks repeatedly without drifting configurations. Engineers can make multiple infra changes can be made in parallel. It is collaborative, as the logs from the Terraform run are visible to people inside your org. People can review the diff, request changes, and suggest changes quickly. Moreover, you can roll back reliably. 
 
-Moreover, you can roll back reliably. This workflow increases everyone's participation in infrastructure and builds confidence in changes. And let's be honest, solving ops problems all the time is boring and soon becomes frustrating. If you can't avoid it, best automate it. Once you have Terraform running on CI, you can "hopefully" ask dev teams to raise PRs -- for simple ops changes. You can point them to how to do it from similar ops changes done in the past. Of course, this claim that developers will raise Infra PR depends heavily on the engineering culture of the org 😅. But I think it brings hope for collaboration, better than zero visibility into infrastructure by developer teams.
+This workflow increases everyone's participation in infrastructure and builds confidence in changes. And let's be honest, solving ops problems all the time is boring and soon becomes frustrating. If you can't avoid it, best automate it. Once you have Terraform running on CI, you can "hopefully" ask dev teams to raise PRs -- for simple ops changes. You can point them to how to do it from similar ops changes done in the past. Of course, this claim that developers will raise Infra PR depends heavily on the engineering culture of the org 😅. But I think it brings hope for collaboration, better than zero visibility into infrastructure by developer teams.
 
 With the intent set, part two of this blog will discuss the technical aspects of setting up Terraform on CI. We will cover Authentication and Authorization with cloud providers, Terraform providers, and CI triggers. Stay tuned!
