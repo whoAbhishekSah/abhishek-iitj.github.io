@@ -14,6 +14,12 @@ module.exports = {
   },
   plugins: [
     {
+      resolve: `gatsby-plugin-disqus`,
+      options: {
+          shortname: `absh-dev`
+      }
+    },
+    {
       resolve: `gatsby-omni-font-loader`,
       options: {
         enableListener: true,
